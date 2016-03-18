@@ -1,0 +1,165 @@
+#!/usr/bin/perl
+####################################################################################################################################
+# expresspg - Express PostgreSQL Build Engine
+####################################################################################################################################
+
+####################################################################################################################################
+# Perl includes
+####################################################################################################################################
+use strict;
+use warnings FATAL => qw(all);
+use Carp qw(confess);
+
+# Convert die to confess to capture the stack trace
+$SIG{__DIE__} = sub { Carp::confess @_ };
+
+use Cwd qw(cwd abs_path);
+use File::Basename qw(dirname);
+use Getopt::Long qw(GetOptions);
+use Scalar::Util qw(blessed);
+
+use lib abs_path(dirname(dirname($0))) . '/lib';
+use ExpressPg::Build;
+use ExpressPg::Common::Exception;
+use ExpressPg::Common::Ini;
+use ExpressPg::Common::Log;
+use ExpressPg::Common::String;
+
+####################################################################################################################################
+# Place code in eval block to catch errors for reporting
+####################################################################################################################################
+eval
+{
+    # Command-line parameters
+    ################################################################################################################################
+    my $bHelp = false;                                  # Display usage
+    my $bVersion = false;                               # Display version
+    my $bQuiet = false;                                 # Sets log level to ERROR
+    my $strLogLevel = 'info';                           # Default log level
+    my $strConfigFile;                                  # Location of config file
+    my $strInstance;                                    # Database instance name
+    my $bDrop = false;                                  # Drop existing database during build?
+    my $strCopyFrom;                                    # Database to copy before performing update
+    my $bDebug = false;                                 # Process user scripts as includes
+    my $bDebugAll = false;                              # Process all scripts as includes
+
+    GetOptions ('help' => \$bHelp,
+                'version' => \$bVersion,
+                'quiet' => \$bQuiet,
+                'drop' => \$bDrop,
+                'copy-from=s' => \$strCopyFrom,
+                'debug' => \$bDebug,
+                'debug-all' => \$bDebugAll,
+                'log-level=s' => \$strLogLevel,
+                'instance=s' => \$strInstance)
+        or pod2usage(2);
+
+    # Display version and exit if requested
+    if ($bHelp || $bVersion)
+    {
+        print "CorePg 0.10 Build Engine\n";
+
+        if ($bHelp)
+        {
+            print "\n";
+            print "no help yet!\n";
+            # pod2usage();
+        }
+
+        exit 0;
+    }
+
+    # Get the command
+    my $strCommand = $ARGV[0];
+
+    if (!defined($strCommand))
+    {
+        confess &log(ERROR, 'command must be provided', ERROR_COMMAND_MISSING);
+    }
+
+    if (!($strCommand eq CMD_BUILD || $strCommand eq CMD_UPDATE))
+    {
+        confess &log(ERROR, 'invalid command', ERROR_COMMAND_INVALID);
+    }
+
+    # Find path to teh library
+    ################################################################################################################################
+    my $strLibraryPath;
+
+    foreach my $strPath (%INC)
+    {
+        if ($strPath =~ /^\/.*Ini\.pm$/)
+        {
+            $strLibraryPath = abs_path(dirname(dirname($strPath)));
+        }
+    }
+
+    if (!defined($strLibraryPath))
+    {
+        confess &log(ASSERT, 'unable to find library path');
+    }
+
+    # Load config file
+    ################################################################################################################################
+    if (!defined($strConfigFile))
+    {
+        $strConfigFile = cwd . '/build/build.conf';
+    }
+
+    my $oConfig = new ExpressPg::Common::Ini($strConfigFile, true);
+
+    my $strDbName = $oConfig->get(CONFIG_SECTION_DB, CONFIG_KEY_NAME);
+    my $strDbOwner = $oConfig->get(CONFIG_SECTION_DB, CONFIG_KEY_OWNER);
+
+    my $strDbInstance = defined($strInstance) ? "${strDbName}_${strInstance}" : $strDbName;
+
+    # Parse array of schemas to exclude if defined
+    my @strySchemaExclude;
+
+    if ($oConfig->test(CONFIG_SECTION_CONFIG, CONFIG_KEY_SCHEMA_EXCLUDE))
+    {
+        @strySchemaExclude = split(',', $oConfig->get(CONFIG_SECTION_CONFIG, CONFIG_KEY_SCHEMA_EXCLUDE));
+    }
+
+    # Build
+    ################################################################################################################################
+    my $oBuild;
+
+    if ($strCommand eq CMD_BUILD)
+    {
+        $oBuild = new ExpressPg::Build(
+            $strCommand, $strConfigFile, $strLibraryPath, $strDbInstance, $strDbOwner, \@strySchemaExclude, $bDebug, $bDebugAll,
+            {bDrop => $bDrop});
+    }
+
+    # Update
+    ################################################################################################################################
+    if ($strCommand eq CMD_UPDATE)
+    {
+        $oBuild = new ExpressPg::Build(
+            $strCommand, $strConfigFile, $strLibraryPath, $strDbInstance, $strDbOwner,  \@strySchemaExclude, $bDebug, $bDebugAll,
+            {bDrop => $bDrop, strCopyFrom => $strCopyFrom});
+    }
+
+    # Write the script to stdout
+    syswrite(*STDOUT, trim($oBuild->{strScript}) . "\n");
+
+    # Return success
+    exit 0;
+};
+
+####################################################################################################################################
+# Check for errors and report as needed
+####################################################################################################################################
+if ($@)
+{
+    my $oMessage = $@;
+
+    # If a backrest exception then return the code - don't confess
+    if (blessed($oMessage) && $oMessage->isa('ExpressPg::Common::Exception'))
+    {
+        exit $oMessage->code();
+    }
+
+    confess $oMessage;
+}
