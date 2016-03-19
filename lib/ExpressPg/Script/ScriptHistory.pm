@@ -47,7 +47,7 @@ sub scriptHistoryRender
     my $strScript;
     my $strDoNoModifyComment = 'GENERATED AUTOMATICALLY BY EXPRESSPG - DO NOT MODIFY!';
 
-    if ($strCommand eq CMD_BUILD)
+    if ($strCommand eq CMD_BUILD || $strCommand eq CMD_UPDATE)
     {
         $strScript = trim("
 /***********************************************************************************************************************************
