@@ -223,7 +223,7 @@ begin
                    set comment = coalesce(comment || E'\\n', '') || trim(both E' \\t\\n' from strComment);
 
                 if lTransactionId is not null then
-                    update _scd.transaction
+                    update ${strSchema}.history_transaction
                        set comment = (select comment from _temp_express_history_transaction)
                      where id = lTransactionId;
                 end if;
@@ -385,7 +385,7 @@ begin
             E'                raise exception ''Object % cannot be (re)inserted into another table'', new.id;\\n' ||
             E'            end if;\\n' ||
             E'\\n' ||
-            E'            update _scd.object\\n' ||
+            E'            update _express.history_object\\n' ||
             E'               set datetime_insert = tsTimestamp,\\n' ||
             E'                   datetime_update = tsTimestamp,\\n' ||
             E'                   datetime_delete = null\\n' ||
