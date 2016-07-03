@@ -111,7 +111,7 @@ create table ${strSchema}.history_role
 (
     id bigint not null default nextval('${strSchema}.history_id_seq'),
     key text not null,
-    deny boolean not null default false,
+    allow boolean not null default false,
     comment boolean not null default true,
 
     constraint historyrole_pk
@@ -120,11 +120,8 @@ create table ${strSchema}.history_role
         unique (key)
 );
 
--- insert into _scd.account (key, deny) values ('postgres', true);
--- insert into _scd.account (key, deny) values ((select * from _utility.role_get()), true);
--- insert into _scd.account (key, deny) values ((select * from _utility.role_get('admin')), true);
--- insert into _scd.account (key, deny, comment) values ((select * from _utility.role_get('user')), true, false);
--- insert into _scd.account (key, deny) values ((select * from _utility.role_get('reader')), true);
+insert into ${strSchema}.history_role (key, allow) values ('postgres', false);
+insert into ${strSchema}.history_role (key, allow) values (session_user, true);
 
 /***********************************************************************************************************************************
 HISTORY_APPLICATION Table
@@ -133,7 +130,7 @@ create table ${strSchema}.history_application
 (
     id bigint not null default nextval('${strSchema}.history_id_seq'),
     key text not null,
-    deny boolean not null default false,
+    allow boolean not null default true,
     comment boolean not null default true,
 
     constraint historyapplication_pk
@@ -212,11 +209,11 @@ begin
         declare
             lAccountId bigint;
             strAccountName text;
-            bAccountDeny boolean;
+            bAccountAllow boolean;
             bAccountComment boolean;
             lApplicationId bigint;
             strApplicationName text;
-            bApplicationDeny boolean;
+            bApplicationAllow boolean;
             bApplicationComment boolean;
             bBuild boolean = false;
             strSql text;
@@ -229,19 +226,19 @@ begin
             select txid_current()
               into lTransactionId;
 
-             select id,
-                    key,
-                    deny,
-                    comment
-               into lAccountId,
-                    strAccountName,
-                    bAccountDeny,
-                    bAccountComment
-               from ${strSchema}.history_role
-              where history_role.key = session_user;
+            select id,
+                   key,
+                   allow,
+                   comment
+              into lAccountId,
+                   strAccountName,
+                   bAccountAllow,
+                   bAccountComment
+              from ${strSchema}.history_role
+             where history_role.key = session_user;
 
-            if bAccountDeny then
-                raise exception 'role \"%\" cannot update tables with history', strAccountName;
+            if bAccountAllow is null or not bAccountAllow then
+                raise exception 'role \"%\" cannot update tables with history', session_user;
             end if;
 
             -- This exception is for 9.0-9.2 compatability.
@@ -253,36 +250,34 @@ begin
             execute strSql into strApplicationName;
 
             select id,
-                   deny,
+                   allow,
                    comment
               into lApplicationId,
-                   bApplicationDeny,
+                   bApplicationAllow,
                    bApplicationComment
               from ${strSchema}.history_application
              where lower(history_application.key) = lower(strApplicationName);
 
-            if bApplicationDeny then
+            if not bApplicationAllow then
                 raise exception 'application \"%\" cannot update tables with history', strApplicationName;
             end if;
 
             if lAccountId is null then
                 insert into ${strSchema}.history_role (key)
                       values (session_user)
-                   returning id, deny, comment
-                        into lAccountId, bAccountDeny, bAccountComment;
+                   returning id, comment
+                        into lAccountId, bAccountComment;
             end if;
 
             if lApplicationId is null then
                 insert into ${strSchema}.history_application (key)
                      values (strApplicationName)
-                  returning id, deny, comment
-                       into lApplicationId, bApplicationDeny, bApplicationComment;
+                  returning id, comment
+                       into lApplicationId, bApplicationComment;
             end if;
 
-            if bAccountComment and bApplicationComment then
-                if strComment is null then
-                    raise exception 'Transaction comment is required';
-                end if;
+            if strComment is null and (bAccountComment or bApplicationComment) then
+                raise exception 'transaction comment is required';
             end if;
 
             insert into ${strSchema}.history_transaction (id, build, history_role_id, history_application_id, comment)
@@ -344,8 +339,8 @@ begin
             E'        raise exception ''IDs from foreign keyspaces must be >= 100000000000000000'';\\n' ||
             E'    end if;\\n' ||
             E'\\n' ||
-            E'    insert into ${strSchema}.history_object (id, history_table_id, timestamp_insert, timestamp_update)' || E'\\n' ||
-            E'         values (new.id, ' || lHistoryTableId || E', tsTimestamp, tsTimestamp);\\n' ||
+            E'    insert into ${strSchema}.history_object (id, history_table_id, timestamp_insert)' || E'\\n' ||
+            E'         values (new.id, ' || lHistoryTableId || E', tsTimestamp);\\n' ||
             E'\\n' ||
             E'    insert into ${strSchema}.history (history_object_id, history_transaction_id, timestamp, type, data)\\n' ||
             E'         values (new.id, ${strSchema}.history_transaction_create(), tsTimestamp, ''i'',\\n' ||
