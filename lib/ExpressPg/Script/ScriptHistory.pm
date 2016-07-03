@@ -344,26 +344,8 @@ begin
             E'        raise exception ''IDs from foreign keyspaces must be >= 100000000000000000'';\\n' ||
             E'    end if;\\n' ||
             E'\\n' ||
-            E'    begin\\n' ||
-            E'        insert into ${strSchema}.history_object (id, history_table_id, timestamp_insert, timestamp_update)' || E'\\n' ||
-            E'                    values (new.id, ' || lHistoryTableId || E', tsTimestamp, tsTimestamp);\\n' ||
-            E'    exception\\n' ||
-            E'        when unique_violation then\\n' ||
-            E'            if\\n' ||
-            E'            (\\n' ||
-            E'                select history_table.id <> ' || lHistoryTableId || E'\\n' ||
-            E'                  from ${strSchema}.history_table\\n' ||
-            E'                 where object.id = new.id\\n' ||
-            E'            ) then\\n' ||
-            E'                raise exception ''Object % cannot be (re)inserted into another table'', new.id;\\n' ||
-            E'            end if;\\n' ||
-            E'\\n' ||
-            E'            update _express.history_object\\n' ||
-            E'               set datetime_insert = tsTimestamp,\\n' ||
-            E'                   datetime_update = tsTimestamp,\\n' ||
-            E'                   datetime_delete = null\\n' ||
-            E'             where id = new.id;\\n' ||
-            E'    end;\\n' ||
+            E'    insert into ${strSchema}.history_object (id, history_table_id, timestamp_insert, timestamp_update)' || E'\\n' ||
+            E'         values (new.id, ' || lHistoryTableId || E', tsTimestamp, tsTimestamp);\\n' ||
             E'\\n' ||
             E'    insert into ${strSchema}.history (history_object_id, history_transaction_id, timestamp, type, data)\\n' ||
             E'         values (new.id, ${strSchema}.history_transaction_create(), tsTimestamp, ''i'',\\n' ||
