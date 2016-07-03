@@ -440,6 +440,9 @@ alter database ${strDbInstance} owner to ${strDbOwner};
         $self->block('drop schema if exists public;');
     }
 
+    # !!! Capture the transaction ID here and store in a temp table.  This will be used to ensure that no commits are done in any
+    # of the user scripts or accidentally in the build scripts.
+
     # Include the _build schema
     $self->block(scriptBuildRender($self), true);
 
