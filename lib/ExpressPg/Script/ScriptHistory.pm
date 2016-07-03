@@ -197,115 +197,97 @@ HISTORY_TRANSACTION_CREATE Function
 create function ${strSchema}.history_transaction_create(strComment text default null) returns bigint as \$\$
 declare
     lTransactionId bigint;
-    lAccountId bigint;
-    strAccountName text;
-    bAccountDeny boolean;
-    bAccountComment boolean;
-    lApplicationId bigint;
-    strApplicationName text;
-    bApplicationDeny boolean;
-    bApplicationComment boolean;
-    bBuild boolean = false;
-    strSql text;
 begin
-    begin
-         execute 'create temporary table _temp_express_history_transaction (id bigint, comment text) on commit drop';
+    select id
+      into lTransactionId
+      from ${strSchema}.history_transaction
+     where id = txid_current();
 
-         insert into _temp_express_history_transaction (comment) values (strComment);
-    exception
-        when duplicate_table then
-            select id
-              into lTransactionId
-              from _temp_express_history_transaction;
+    if found then
+        if strComment is not null then
+            update ${strSchema}.history_transaction
+               set comment = coalesce(comment || E'\\n', '') || trim(both E' \\t\\n' from strComment);
+        end if;
+    else
+        declare
+            lAccountId bigint;
+            strAccountName text;
+            bAccountDeny boolean;
+            bAccountComment boolean;
+            lApplicationId bigint;
+            strApplicationName text;
+            bApplicationDeny boolean;
+            bApplicationComment boolean;
+            bBuild boolean = false;
+            strSql text;
+        begin
+            select count(*) = 1
+              into bBuild
+              from pg_namespace
+             where pg_namespace.nspname = '_build';
 
-            if strComment is not null then
-                update _temp_express_history_transaction
-                   set comment = coalesce(comment || E'\\n', '') || trim(both E' \\t\\n' from strComment);
+            select txid_current()
+              into lTransactionId;
 
-                if lTransactionId is not null then
-                    update ${strSchema}.history_transaction
-                       set comment = (select comment from _temp_express_history_transaction)
-                     where id = lTransactionId;
+             select id,
+                    key,
+                    deny,
+                    comment
+               into lAccountId,
+                    strAccountName,
+                    bAccountDeny,
+                    bAccountComment
+               from ${strSchema}.history_role
+              where history_role.key = session_user;
+
+            if bAccountDeny then
+                raise exception 'role \"%\" cannot update tables with history', strAccountName;
+            end if;
+
+            -- This exception is for 9.0-9.2 compatability.
+            strSql =
+                'select coalesce(application_name, ''<unknown>'')
+                  from pg_stat_activity
+                 where pid = pg_backend_pid()';
+
+            execute strSql into strApplicationName;
+
+            select id,
+                   deny,
+                   comment
+              into lApplicationId,
+                   bApplicationDeny,
+                   bApplicationComment
+              from ${strSchema}.history_application
+             where lower(history_application.key) = lower(strApplicationName);
+
+            if bApplicationDeny then
+                raise exception 'application \"%\" cannot update tables with history', strApplicationName;
+            end if;
+
+            if lAccountId is null then
+                insert into ${strSchema}.history_role (key)
+                      values (session_user)
+                   returning id, deny, comment
+                        into lAccountId, bAccountDeny, bAccountComment;
+            end if;
+
+            if lApplicationId is null then
+                insert into ${strSchema}.history_application (key)
+                     values (strApplicationName)
+                  returning id, deny, comment
+                       into lApplicationId, bApplicationDeny, bApplicationComment;
+            end if;
+
+            if bAccountComment and bApplicationComment then
+                if strComment is null then
+                    raise exception 'Transaction comment is required';
                 end if;
             end if;
 
-            if lTransactionId is not null then
-                return lTransactionId;
-            end if;
-    end;
-
-    select count(*) = 1
-      into bBuild
-      from pg_namespace
-     where pg_namespace.nspname = '_build';
-
-    if (strComment is null or bBuild = true) and lTransactionId is null then
-        select nextval('${strSchema}.history_id_seq')
-         into lTransactionId;
-
-         update _temp_express_history_transaction
-            set id = lTransactionId;
-
-         select id,
-                key,
-                deny,
-                comment
-           into lAccountId,
-                strAccountName,
-                bAccountDeny,
-                bAccountComment
-           from ${strSchema}.history_role
-          where history_role.key = session_user;
-
-        if bAccountDeny then
-            raise exception 'role \"%\" cannot update tables with history', strAccountName;
-        end if;
-
-        -- This exception is for 9.0-9.2 compatability.
-        strSql =
-            'select coalesce(application_name, ''<unknown>'')
-              from pg_stat_activity
-             where pid = pg_backend_pid()';
-
-        execute strSql into strApplicationName;
-
-        select id,
-               deny,
-               comment
-          into lApplicationId,
-               bApplicationDeny,
-               bApplicationComment
-          from ${strSchema}.history_application
-         where lower(history_application.key) = lower(strApplicationName);
-
-        if bApplicationDeny then
-            raise exception 'application \"%\" cannot update tables with history', strApplicationName;
-        end if;
-
-        if lAccountId is null then
-            insert into ${strSchema}.history_role (key)
-                  values (session_user)
-               returning id, deny, comment
-                    into lAccountId, bAccountDeny, bAccountComment;
-        end if;
-
-        if lApplicationId is null then
-            insert into ${strSchema}.history_application (key)
-                 values (strApplicationName)
-              returning id, deny, comment
-                   into lApplicationId, bApplicationDeny, bApplicationComment;
-        end if;
-
-        strComment = (select comment from _temp_express_history_transaction);
-
-        if bAccountComment and bApplicationComment then
-            if strComment is null then
-                raise exception 'Transaction comment is required';
-            end if;
-        end if;
-
-        insert into ${strSchema}.history_transaction (id, build, history_role_id, history_application_id, comment)
-             values (lTransactionId, bBuild, lAccountId, lApplicationId, strComment);
+            insert into ${strSchema}.history_transaction (id, build, history_role_id, history_application_id, comment)
+                 values (lTransactionId, bBuild, lAccountId, lApplicationId, strComment);
+        end;
     end if;
 
     return lTransactionId;
@@ -352,21 +334,12 @@ begin
             E'        select nextval(''${strSchema}.history_id_seq'')\\n' ||
             E'          into new.id;\\n' ||
             E'    elsif new.id between ${lHistoryIdMin} and ${lHistoryIdMax} then\\n' ||
-            E'        begin\\n' ||
-            E'            if new.id > currval(''${strSchema}.history_id_seq'') and not pg_has_role(session_user, ''${strDbOwner}'', ''usage'') then\\n' ||
-            E'                raise exception ''${strSchema}.history_id_seq has current value of % " .
-                                              "so new.id = % is not valid (%)'',\\n' ||
-            E'                                currval(''${strSchema}.history_id_seq''), new.id,\\n' ||
-            E'                                ''use ${strSchema}.history_id_seq to generate valid history IDs'';\\n' ||
-            E'            end if;\\n' ||
-            E'        exception\\n' ||
-            E'            when object_not_in_prerequisite_state then\\n' ||
-            E'                if not pg_has_role(session_user, ''${strDbOwner}'', ''usage'') then\\n' ||
-            E'                    raise exception ''${strSchema}.history_id_seq has no current value so " .
-                                                  "new.id = % could not have come from it (%)'',\\n' ||
-            E'                                    new.id, ''use ${strSchema}.history_id_seq to generate valid history IDs'';\\n' ||
-            E'                end if;\\n' ||
-            E'        end;\\n' ||
+            E'        if new.id > currval(''${strSchema}.history_id_seq'') and not pg_has_role(session_user, ''${strDbOwner}'', ''usage'') then\\n' ||
+            E'            raise exception ''${strSchema}.history_id_seq has current value of % " .
+                                          "so new.id = % is not valid (%)'',\\n' ||
+            E'                            currval(''${strSchema}.history_id_seq''), new.id,\\n' ||
+            E'                            ''use ${strSchema}.history_id_seq to generate valid history IDs'';\\n' ||
+            E'        end if;\\n' ||
             E'    elsif new.id < 100000000000000000 then\\n' ||
             E'        raise exception ''IDs from foreign keyspaces must be >= 100000000000000000'';\\n' ||
             E'    end if;\\n' ||
