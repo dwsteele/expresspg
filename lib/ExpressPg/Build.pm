@@ -215,9 +215,6 @@ sub processSub
         }
 
         $self->commentLong('User build scripts.');
-        $self->roleReset($strDbOwner);
-
-        $self->commentShort('Include user scripts from original location for debugging');
 
         foreach my $strBuildFile (@{$stryBuildFile})
         {
@@ -226,6 +223,7 @@ sub processSub
                 $strBuildFile = "${strWorkingPath}/${strBuildFile}";
             }
 
+            $self->roleReset($strDbOwner);
             $self->block("\\i ${strBuildFile}");
         }
     }
@@ -238,9 +236,6 @@ sub processSub
         if (@{$stryUpdateFile} > 0)
         {
             $self->commentLong('User update scripts.');
-            $self->roleReset($strDbOwner);
-
-            $self->commentShort('Include user scripts from original location for debugging');
 
             foreach my $strUpdateFile (@{$stryUpdateFile})
             {
@@ -249,6 +244,7 @@ sub processSub
                     $strUpdateFile = "${strWorkingPath}/${strUpdateFile}";
                 }
 
+                $self->roleReset($strDbOwner);
                 $self->block("\\i ${strUpdateFile}");
             }
         }
@@ -295,8 +291,8 @@ sub process
     $self->commentShort('Make sure that errors are detected and not automatically rolled back');
     $self->block('\set ON_ERROR_ROLLBACK off');
 
-    $self->commentShort('Set verbosity according to build settings');
-    $self->block('\set VERBOSITY terse');
+    # $self->commentShort('Set verbosity according to build settings');
+    # $self->block('\set VERBOSITY terse');
 
     # Make sure the database owner role exists
     $self->commentLong("Create the database owner and reader roles if they doesn't exist.");
@@ -477,6 +473,8 @@ alter database ${strDbInstance} owner to ${strDbOwner};
     $self->commentLong('Validation procedures.');
     $self->roleReset($strDbOwner);
     $self->block("
+set role postgres;
+
 do \$\$
 declare
     strDbOwner text = '${strDbOwner}';

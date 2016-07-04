@@ -43,6 +43,10 @@ Functions to implement a unit test suite for builds.
 " . $oBuild->roleResetText($oBuild->{strDbOwner}) . "
 create schema _test;
 
+grant usage
+   on schema _build
+   to public;
+
 /***********************************************************************************************************************************
 UNIT_TEST Table
 

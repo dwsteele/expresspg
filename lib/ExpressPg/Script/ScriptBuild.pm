@@ -43,6 +43,10 @@ Common functions to be used in other parts of the build.
 " . $oBuild->roleResetText($oBuild->{strDbOwner}) . "
 create schema _build;
 
+grant usage
+   on schema _build
+   to public;
+
 /***********************************************************************************************************************************
 OBJECT_NAME_EXCEPTION Function & Table
 
@@ -568,6 +572,8 @@ READER_ROLE_CREATE Function
 
 Make sure all tables and views can be read by the schema reader role and grant schema usage.
 **********************************************************************************************************************************/;
+set role postgres;
+
 create function _build.reader_role_create
 (
     strOwnerName text
@@ -597,8 +603,6 @@ PUBLIC_EXECUTE_REVOKE Function
 
 Make sure there are no public execute permissions on functions.
 **********************************************************************************************************************************/;
-set role postgres;
-
 create function _build.public_execute_revoke()
     returns void as \$\$
 declare
@@ -606,16 +610,17 @@ declare
 begin
     for rSchema in
         select pg_namespace.oid, nspname as name
-          from pg_namespace, pg_roles
-         where pg_namespace.nspowner = pg_roles.oid
-           and pg_roles.rolname <> 'postgres'
+          from pg_namespace
+               inner join pg_roles
+                    on pg_roles.oid = pg_namespace.nspowner
+                   and pg_roles.rolname <> 'postgres'
+         where pg_namespace.nspname not in ('_build', '_test')
          order by nspname
     loop
         execute 'revoke all on all functions in schema ' || rSchema.name || ' from public';
     end loop;
 end
-\$\$ language plpgsql security definer;
-");
+\$\$ language plpgsql security definer;");
 
     # Return from function and log return values if any
     return logDebugReturn
