@@ -597,6 +597,8 @@ PUBLIC_EXECUTE_REVOKE Function
 
 Make sure there are no public execute permissions on functions.
 **********************************************************************************************************************************/;
+set role postgres;
+
 create function _build.public_execute_revoke()
     returns void as \$\$
 declare
