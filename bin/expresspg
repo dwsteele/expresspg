@@ -82,7 +82,7 @@ eval
         confess &log(ERROR, 'invalid command', ERROR_COMMAND_INVALID);
     }
 
-    # Find path to teh library
+    # Find path to the library
     ################################################################################################################################
     my $strLibraryPath;
 
