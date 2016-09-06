@@ -131,7 +131,7 @@ create table ${strSchema}.history_application
     id bigint not null default nextval('${strSchema}.history_id_seq'),
     key text not null,
     allow boolean not null default true,
-    comment boolean not null default true,
+    comment boolean not null default false,
 
     constraint historyapplication_pk
         primary key (id),
