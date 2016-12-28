@@ -165,7 +165,7 @@ sub iniLoad
                         $$oContent{$strSection}{$strKey} = [$$oContent{$strSection}{$strKey}];
                     }
 
-                    push $$oContent{$strSection}{$strKey}, $strValue;
+                    push(@{$oContent->{$strSection}{$strKey}}, $strValue);
                 }
                 else
                 {
