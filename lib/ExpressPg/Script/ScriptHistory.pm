@@ -383,20 +383,22 @@ begin
             E'        raise exception ''Cannot alter ID on ' || strSchemaTableName || ''';' || E'\\n' ||
             E'    end if;\\n' ||
             E'\\n' ||
-            E'    update ${strSchema}.history_object\\n' ||
-            E'       set timestamp_update = tsTimestamp\\n' ||
-            E'     where id = new.id;\\n' ||
+            E'    jData = ' ||
+            E'        (select (''{'' || string_agg(to_json(new_field.key) || '':'' || new_field.value, '','') || ''}'')\\n' ||
+            E'           from json_each(row_to_json(new.*)) as new_field\\n' ||
+            E'          inner join json_each(row_to_json(old.*)) as old_field\\n' ||
+            E'             on new_field.key = old_field.key\\n' ||
+            E'            and new_field.value::text is distinct from old_field.value::text\\n' ||
+            E'          where new_field.key <> ''id'');\\n' ||
+            E'\\n' ||
+            E'    if jData is not null then' ||
+            E'        update ${strSchema}.history_object\\n' ||
+            E'           set timestamp_update = tsTimestamp\\n' ||
+            E'         where id = new.id;\\n' ||
             E'\\n' ||
             E'    insert into ${strSchema}.history (history_object_id, history_transaction_id, timestamp, type, data)\\n' ||
-            E'         values (new.id, ${strSchema}.history_transaction_create(), tsTimestamp, ''u'',\\n' ||
-            E'                 (select coalesce(\\n' ||
-            E'                      (select (''{'' || string_agg(to_json(new_field.key) || '':'' || new_field.value, '','') || ''}'')\\n' ||
-            E'                         from json_each(row_to_json(new.*)) as new_field\\n' ||
-            E'                              inner join json_each(row_to_json(old.*)) as old_field\\n' ||
-            E'                                   on new_field.key = old_field.key\\n' ||
-            E'                                  and new_field.value::text is distinct from old_field.value::text\\n' ||
-            E'                        where new_field.key <> ''id''),\\n' ||
-            E'                      ''{}'')::jsonb));\\n';
+            E'         values (new.id, ${strSchema}.history_transaction_create(), tsTimestamp, ''u'', jData);\\n' ||
+            E'    end if;\\n';
     end if;
 
     -- Create the update before trigger
@@ -407,6 +409,7 @@ begin
             E'-- ${strDoNoModifyComment}\\n' ||
             E'declare\\n' ||
             E'    tsTimestamp timestamp with time zone = clock_timestamp();\\n' ||
+            E'    jData jsonb;\\n' ||
             E'begin\\n' ||
             strBody ||
             E'\\n' ||
